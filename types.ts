@@ -30,7 +30,8 @@ export enum EventCategory {
 
 export enum EventGender {
   MEN = 'Чоловіки',
-  WOMEN = 'Жінки'
+  WOMEN = 'Жінки',
+  MIXED = 'Змішаний'
 }
 
 export interface PlayerStats {
@@ -66,15 +67,6 @@ export interface Player {
   verified?: boolean;
 }
 
-export interface Team {
-  id: string;
-  name: string;
-  type: GameType;
-  vacancies: PlayerRole[];
-  members: Player[];
-  captainId: string;
-}
-
 export interface Tournament {
   id: string;
   title: string;
@@ -87,12 +79,20 @@ export interface Tournament {
   requirements: string;
   organizer: string;
   organizerContact: string;
+  organizerPhotoUrl?: string;
   photoUrl?: string;
+  maxTeams?: number;
+  minAge?: number;
+  minAgeMen?: number;
+  minAgeWomen?: number;
+  teamFormat?: string; // e.g., "2x2", "4x4"
 }
 
-export interface ChatMessage {
+export interface Team {
   id: string;
-  sender: string;
-  text: string;
-  timestamp: Date;
+  name: string;
+  type: GameType;
+  vacancies: PlayerRole[];
+  members: Player[];
+  captainId: string;
 }

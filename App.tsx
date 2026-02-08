@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { HashRouter, Routes, Route, Link } from 'react-router-dom';
 import { SevaAssistant } from './components/SevaAssistant';
 import { geminiService } from './services/gemini';
-import { PlayerLevel, PlayerRole, GameType, Tournament, Player, PlayerStats, ChatMessage, PlayerReview, EventCategory, EventGender } from './types';
+import { PlayerLevel, PlayerRole, GameType, Tournament, Player, PlayerStats, PlayerReview, EventCategory, EventGender } from './types';
 
 // Utility for calculating rating
 const calculatePlayerRating = (stats: PlayerStats, reviews: PlayerReview[]): number => {
@@ -50,8 +50,9 @@ const INITIAL_PLAYERS: Player[] = [
 ];
 
 const INITIAL_TOURNAMENTS: Tournament[] = [
-  { id: '1', title: 'Кубок Ветеранів Києва', date: '2024-06-15', location: 'Київ, Гідропарк', type: GameType.BEACH, category: EventCategory.TOURNAMENT, gender: EventGender.MEN, ageCategory: '40+', requirements: 'Наявність форми.', organizer: 'Іван Петренко', organizerContact: '+380671234567', photoUrl: 'https://images.unsplash.com/photo-1592656094267-764a45160876?w=800&q=80' },
-  { id: '2', title: 'Чемпіонат України 50+', date: '2024-07-20', location: 'Одеса, Палац Спорту', type: GameType.CLASSIC, category: EventCategory.CHAMPIONSHIP, gender: EventGender.MEN, ageCategory: '50+', requirements: 'Паспорт.', organizer: 'Марія Коваль', organizerContact: '+380507654321', photoUrl: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80' },
+  { id: '1', title: 'Кубок Ветеранів Києва', date: '2024-06-15', location: 'Київ, Гідропарк', type: GameType.BEACH, category: EventCategory.TOURNAMENT, gender: EventGender.MEN, ageCategory: '40+', requirements: 'Наявність форми.', organizer: 'Іван Петренко', organizerContact: '+380671234567', photoUrl: 'https://images.unsplash.com/photo-1592656094267-764a45160876?w=800&q=80', maxTeams: 12, minAge: 40 },
+  { id: '2', title: 'Чемпіонат України 50+', date: '2024-07-20', location: 'Одеса, Палац Спорту', type: GameType.CLASSIC, category: EventCategory.CHAMPIONSHIP, gender: EventGender.MEN, ageCategory: '50+', requirements: 'Паспорт.', organizer: 'Марія Коваль', organizerContact: '+380507654321', photoUrl: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80', maxTeams: 8, minAge: 50 },
+  { id: '3', title: 'Вечірня гра 40+', date: '2024-06-18', location: 'Київ, КПІ', type: GameType.CLASSIC, category: EventCategory.GAME, gender: EventGender.MIXED, ageCategory: '40+', requirements: 'Гарний настрій', organizer: 'Олексій', organizerContact: '+380998887766', minAge: 40 }
 ];
 
 const EventsContext = React.createContext<{
@@ -73,11 +74,11 @@ const RatingStars = ({ rating, size = "sm" }: { rating: number, size?: "sm" | "m
   const stars = [1, 2, 3, 4, 5];
   const iconSize = size === "lg" ? "w-6 h-6" : size === "md" ? "w-4 h-4" : "w-3 h-3";
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-0.5 bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-full">
       {stars.map(s => (
-        <span key={s} className={`${iconSize} ${s <= Math.round(rating) ? 'text-amber-400' : 'text-gray-200'}`}>★</span>
+        <span key={s} className={`${iconSize} ${s <= Math.round(rating) ? 'text-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.5)]' : 'text-white/30'}`}>★</span>
       ))}
-      <span className={`ml-1 font-black text-amber-600 ${size === "lg" ? 'text-2xl' : 'text-xs'}`}>{rating}</span>
+      <span className={`ml-2 font-black text-white ${size === "lg" ? 'text-2xl' : 'text-xs'}`}>{rating}</span>
     </div>
   );
 };
@@ -103,86 +104,458 @@ const getGameTypeIcon = (type: GameType) => {
 const EventModal = ({ isOpen, onClose, onSave, initialData }: { isOpen: boolean, onClose: () => void, onSave: (e: Tournament) => void, initialData?: Tournament | null }) => {
   const [formData, setFormData] = useState<Tournament>({
     id: '', title: '', date: '', location: '', type: GameType.CLASSIC, category: EventCategory.TOURNAMENT, gender: EventGender.MEN,
-    ageCategory: '', requirements: '', organizer: '', organizerContact: '', photoUrl: ''
+    ageCategory: '', requirements: '', organizer: '', organizerContact: '', photoUrl: '', maxTeams: 0, minAge: 35, teamFormat: '6x6', organizerPhotoUrl: '',
+    minAgeMen: 35, minAgeWomen: 35
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingOrganizer, setIsGeneratingOrganizer] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const organizerFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (initialData) setFormData(initialData);
     else if (isOpen) setFormData({
       id: '', title: '', date: '', location: '', type: GameType.CLASSIC, category: EventCategory.TOURNAMENT, gender: EventGender.MEN,
-      ageCategory: '', requirements: '', organizer: '', organizerContact: '', photoUrl: ''
+      ageCategory: '', requirements: '', organizer: '', organizerContact: '', photoUrl: '', maxTeams: 12, minAge: 35, teamFormat: '6x6', organizerPhotoUrl: '',
+      minAgeMen: 35, minAgeWomen: 35
     });
   }, [initialData, isOpen]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'photoUrl' | 'organizerPhotoUrl') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData({ ...formData, [field]: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const isSpecialFormat = formData.type === GameType.MIX || formData.type === GameType.PARK;
+  const isGameCategory = formData.category === EventCategory.GAME;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-blue-950/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-8 bg-blue-950 text-white flex justify-between items-center shrink-0">
-          <h2 className="text-2xl font-black">{initialData ? 'Редагувати подію' : 'Створити подію'}</h2>
-          <button onClick={onClose} className="text-white/60 hover:text-white text-2xl">✕</button>
+      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
+        <div className="p-6 bg-blue-950 text-white flex justify-between items-center shrink-0">
+          <h2 className="text-xl font-black italic uppercase tracking-wider">{initialData ? 'Редагувати подію' : 'Створити подію'}</h2>
+          <button onClick={onClose} className="text-white/60 hover:text-white text-2xl transition-all hover:rotate-90">✕</button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); onSave(formData); onClose(); }} className="p-8 overflow-y-auto space-y-6">
-          <div className="space-y-4">
+        
+        {/* Category Switcher */}
+        <div className="bg-gray-100 flex p-1 shrink-0">
+          {[EventCategory.TOURNAMENT, EventCategory.GAME].map(cat => (
+            <button 
+              key={cat} 
+              type="button" 
+              onClick={() => setFormData({...formData, category: cat})}
+              className={`flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all ${formData.category === cat ? 'bg-white text-blue-950 shadow-md' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {cat === EventCategory.TOURNAMENT ? '🏆 Турнір' : '🏐 Гра (MVP)'}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); onSave(formData); onClose(); }} className="p-6 overflow-y-auto space-y-8 custom-scrollbar">
+          <section className="space-y-4">
+            <h3 className="text-xs font-black text-blue-900 uppercase tracking-widest border-b border-gray-100 pb-2">Основна інформація</h3>
             <div>
-              <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Назва турніру</label>
-              <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-gray-50 p-4 rounded-2xl font-bold border-2 border-transparent focus:border-blue-500 outline-none transition-all" placeholder="Наприклад: Кубок Незалежності" />
+              <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Назва {isGameCategory ? 'зустрічі' : 'турніру'}</label>
+              <input required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl font-bold border-2 border-transparent focus:border-blue-500 outline-none transition-all" placeholder={isGameCategory ? "Напр: Тренування ветеранів" : "Введіть назву турніру"} />
             </div>
 
-            <div>
-              <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Тип гри</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {Object.values(GameType).map(t => (
-                  <label key={t} className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 cursor-pointer font-bold transition-all ${formData.type === t ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-105' : 'bg-white text-gray-400 border-gray-100 hover:border-blue-200'}`}>
-                    <input type="radio" name="gameType" value={t} checked={formData.type === t} onChange={() => setFormData({...formData, type: t})} className="hidden" />
-                    <span className="text-2xl mb-1">{getGameTypeIcon(t as GameType)}</span>
-                    <span className="text-[10px] uppercase tracking-widest">{t}</span>
-                  </label>
-                ))}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Тип гри</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.values(GameType).map(t => (
+                    <button key={t} type="button" onClick={() => setFormData({...formData, type: t as GameType})} className={`flex flex-col items-center justify-center p-2 rounded-xl border-2 font-bold transition-all ${formData.type === t ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-400 border-gray-100 hover:border-blue-200'}`}>
+                      <span className="text-xl mb-1">{getGameTypeIcon(t as GameType)}</span>
+                      <span className="text-[9px] uppercase tracking-widest">{t}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Стать учасників</label>
+                <div className="grid grid-cols-1 gap-2">
+                  <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value as EventGender})} className="w-full bg-gray-50 p-3 rounded-xl font-bold text-xs outline-none border-2 border-transparent focus:border-blue-500">
+                    {Object.values(EventGender).map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Дата</label>
-                <input required type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" />
+                <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Дата</label>
+                <input required type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Локація</label>
-                <input required placeholder="Місто, стадіон" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" />
+                <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Локація</label>
+                <input required placeholder="Місто, стадіон" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+               {isSpecialFormat ? (
+                 <>
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Вік Чоловіків</label>
+                    <input type="number" value={formData.minAgeMen} onChange={e => setFormData({...formData, minAgeMen: parseInt(e.target.value) || 0})} className="w-full bg-blue-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="Мін. вік Ч" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Вік Жінок (minAgeWomen)</label>
+                    <input type="number" value={formData.minAgeWomen} onChange={e => setFormData({...formData, minAgeWomen: parseInt(e.target.value) || 0})} className="w-full bg-pink-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="Мін. вік Ж" />
+                  </div>
+                 </>
+               ) : (
+                <div>
+                  <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Мін. вік</label>
+                  <input type="number" value={formData.minAge} onChange={e => setFormData({...formData, minAge: parseInt(e.target.value) || 0})} className="w-full bg-gray-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="Напр. 40" />
+                </div>
+               )}
+               
+               {isSpecialFormat && (
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Формат</label>
+                    <input value={formData.teamFormat} onChange={e => setFormData({...formData, teamFormat: e.target.value})} className="w-full bg-gray-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="Напр. 2x2" />
+                  </div>
+               )}
+
+               {!isGameCategory && (
+                 <div className={isSpecialFormat ? "col-span-full" : "col-span-2"}>
+                    <label className="text-[9px] font-black uppercase text-gray-400 mb-2 block tracking-widest">К-ть команд (ліміт)</label>
+                    <input type="number" value={formData.maxTeams} onChange={e => setFormData({...formData, maxTeams: parseInt(e.target.value) || 0})} className="w-full bg-gray-50 p-3 rounded-xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="Напр. 12" />
+                 </div>
+               )}
+            </div>
+          </section>
+
+          {/* Contact section */}
+          <section className={`space-y-4 p-6 rounded-[2rem] border transition-all ${isGameCategory ? 'bg-gray-50 border-gray-100' : 'bg-blue-50 border-blue-100 shadow-inner'}`}>
+            <h3 className="text-xs font-black text-blue-900 uppercase tracking-widest flex items-center gap-2">
+               <span className="bg-blue-600 text-white w-5 h-5 flex items-center justify-center rounded-full text-[10px]">{isGameCategory ? '📞' : '👤'}</span>
+               {isGameCategory ? 'Контактна особа' : 'Організатор'}
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               <div>
+                 <label className="text-[8px] font-black uppercase text-gray-400 mb-1 block">{isGameCategory ? 'Ім\'я' : 'ПІБ Організатора'}</label>
+                 <input required value={formData.organizer} onChange={e => setFormData({...formData, organizer: e.target.value})} className="w-full bg-white p-3 rounded-xl font-bold text-sm outline-none border border-transparent focus:border-blue-500 shadow-sm" placeholder="Напр: Олексій" />
+               </div>
+               <div>
+                 <label className="text-[8px] font-black uppercase text-gray-400 mb-1 block">Телефон / Telegram</label>
+                 <input required value={formData.organizerContact} onChange={e => setFormData({...formData, organizerContact: e.target.value})} className="w-full bg-white p-3 rounded-xl font-bold text-sm outline-none border border-transparent focus:border-blue-500 shadow-sm" placeholder="+380..." />
+               </div>
             </div>
             
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block tracking-widest">Зображення (URL)</label>
-                <input value={formData.photoUrl} onChange={e => setFormData({...formData, photoUrl: e.target.value})} className="w-full bg-gray-50 p-4 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500" placeholder="https://..." />
+            {!isGameCategory && (
+              <div className="space-y-3">
+                <label className="text-[8px] font-black uppercase text-gray-400 block">Фото організатора</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-white shadow-md border-2 border-white overflow-hidden shrink-0 flex items-center justify-center">
+                     {formData.organizerPhotoUrl ? (
+                       <img src={formData.organizerPhotoUrl} className="w-full h-full object-cover" alt="Організатор" />
+                     ) : (
+                       <span className="text-2xl opacity-20">👤</span>
+                     )}
+                  </div>
+                  <div className="flex-1 flex gap-2">
+                    <input type="file" ref={organizerFileInputRef} onChange={e => handleFileChange(e, 'organizerPhotoUrl')} className="hidden" accept="image/*" />
+                    <button type="button" onClick={() => organizerFileInputRef.current?.click()} className="bg-white text-blue-900 px-4 h-[44px] rounded-xl font-black text-[10px] uppercase shadow-sm hover:bg-gray-50 transition-all">Файл</button>
+                    <button 
+                      type="button" 
+                      onClick={async () => {
+                        if(!formData.organizer) return alert("Введіть ім'я організатора!");
+                        setIsGeneratingOrganizer(true);
+                        try {
+                          const url = await geminiService.generatePromoImage(`Professional portrait photography of a volleyball event organizer named ${formData.organizer}, realistic athletic style`, "1K");
+                          setFormData(prev => ({ ...prev, organizerPhotoUrl: url }));
+                        } catch(err) { console.error(err); } finally { setIsGeneratingOrganizer(false); }
+                      }} 
+                      disabled={isGeneratingOrganizer}
+                      className="bg-blue-600 text-white px-4 h-[44px] rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-blue-700 transition-all flex-1"
+                    >
+                      {isGeneratingOrganizer ? 'Генерую...' : '🤖 AI Портрет'}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <button 
-                type="button" 
-                onClick={async () => {
-                  if(!formData.title) return alert("Введіть назву турніру для AI!");
-                  setIsGenerating(true);
-                  try {
-                    const url = await geminiService.generatePromoImage(`Professional volleyball photography for tournament: ${formData.title}`, "1K");
-                    setFormData(prev => ({ ...prev, photoUrl: url }));
-                  } catch(err) {
-                    console.error(err);
-                  } finally { setIsGenerating(false); }
-                }} 
-                disabled={isGenerating}
-                className="bg-blue-600 text-white px-6 h-[56px] rounded-2xl font-black shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center min-w-[60px]"
-              >
-                {isGenerating ? '⏳' : '🤖 AI'}
-              </button>
+            )}
+          </section>
+          
+          <section className="space-y-4">
+            <h3 className="text-xs font-black text-blue-900 uppercase tracking-widest border-b border-gray-100 pb-2">Зображення події</h3>
+            {formData.photoUrl && (
+              <div className="w-full h-48 rounded-[2rem] overflow-hidden border-4 border-white shadow-xl relative group">
+                <img src={formData.photoUrl} className="w-full h-full object-cover" alt="Прев'ю" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-6">
+                   <div className="text-white">
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-1">Афіша {isGameCategory ? 'зустрічі' : 'турніру'}</p>
+                      <p className="font-black text-lg italic">{formData.title || 'Нова подія'}</p>
+                   </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-2 group">
+              <div className="relative flex-1">
+                <input 
+                  value={formData.photoUrl} 
+                  onChange={e => setFormData({...formData, photoUrl: e.target.value})} 
+                  className="w-full bg-gray-50 p-4 rounded-2xl font-bold text-xs outline-none border-2 border-transparent focus:border-blue-500 pr-24 transition-all" 
+                  placeholder="URL афіші або завантажте..." 
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                   <input type="file" ref={fileInputRef} onChange={e => handleFileChange(e, 'photoUrl')} className="hidden" accept="image/*" />
+                   <button 
+                    type="button" 
+                    onClick={() => fileInputRef.current?.click()} 
+                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Завантажити файл"
+                   >
+                     📁
+                   </button>
+                   <button 
+                    type="button" 
+                    onClick={async () => {
+                      if(!formData.title) return alert("Спочатку введіть назву події!");
+                      setIsGenerating(true);
+                      try {
+                        const url = await geminiService.generatePromoImage(`Professional high-quality cinematic sports photography for volleyball event titled: ${formData.title}. Dynamic action shot, vibrant lighting.`, "1K");
+                        setFormData(prev => ({ ...prev, photoUrl: url }));
+                      } catch(err) { console.error(err); } finally { setIsGenerating(false); }
+                    }} 
+                    disabled={isGenerating}
+                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                    title="Згенерувати за допомогою AI"
+                   >
+                     {isGenerating ? '⏳' : '🤖'}
+                   </button>
+                </div>
+              </div>
             </div>
-          </div>
-          <button type="submit" className="w-full bg-blue-900 text-white py-5 rounded-3xl font-black text-xl shadow-xl hover:bg-black transition-all">
-            {initialData ? 'Зберегти зміни' : 'Створити подію'}
+            <p className="text-[9px] text-gray-400 italic">Ви можете вставити пряме посилання, обрати файл або натиснути 🤖 для AI генерації на основі назви.</p>
+          </section>
+
+          <button type="submit" className="w-full bg-blue-950 text-white py-5 rounded-[2rem] font-black text-xl shadow-2xl hover:bg-black transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+            {initialData ? 'ЗБЕРЕГТИ ЗМІНИ' : `ОПУБЛІКУВАТИ ${isGameCategory ? 'ГРУ' : 'ПОДІЮ'}`}
           </button>
         </form>
+      </div>
+    </div>
+  );
+};
+
+// CalendarPage
+const CalendarPage = () => {
+  const { events, addEvent, updateEvent, deleteEvent } = React.useContext(EventsContext);
+  const [modal, setModal] = useState<{ open: boolean, data: Tournament | null }>({ open: false, data: null });
+  const [currentDate, setCurrentDate] = useState(new Date(2024, 5, 1)); // Червень 2024
+  const [selectedDay, setSelectedDay] = useState<number>(15);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const startDayOfMonth = (year: number, month: number) => {
+    let day = new Date(year, month, 1).getDay();
+    return day === 0 ? 6 : day - 1; // 0=Pn, 6=Nd
+  };
+
+  const monthDaysCount = daysInMonth(currentDate.getFullYear(), currentDate.getMonth());
+  const offset = startDayOfMonth(currentDate.getFullYear(), currentDate.getMonth());
+
+  const getEventsForDay = (day: number) => {
+    const year = currentDate.getFullYear();
+    const month = (currentDate.getMonth() + 1).toString().padStart(2, '0');
+    const d = day.toString().padStart(2, '0');
+    const dStr = `${year}-${month}-${d}`;
+    return events.filter(e => e.date === dStr);
+  };
+
+  const selectedDayEvents = getEventsForDay(selectedDay);
+
+  const handleExport = () => {
+    const csv = ["ID,Title,Date,Location,Type,Category", ...events.map(e => `"${e.id}","${e.title}","${e.date}","${e.location}","${e.type}","${e.category}"`)].join("\n");
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "events_export.csv";
+    a.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split("\n").slice(1);
+      lines.forEach(l => {
+        const parts = l.split(",").map(p => p.replace(/"/g, ''));
+        if (parts.length >= 4) {
+          addEvent({
+            id: Math.random().toString(), title: parts[1], date: parts[2], location: parts[3],
+            type: parts[4] as GameType || GameType.CLASSIC,
+            category: parts[5] as EventCategory || EventCategory.TOURNAMENT, gender: EventGender.MEN, organizer: 'Імпорт', organizerContact: '-', ageCategory: '', requirements: ''
+          });
+        }
+      });
+      alert("Дані успішно імпортовано!");
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-4xl font-black text-blue-950">Календар</h1>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={handleExport} className="bg-white border border-gray-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2">📥 Експорт</button>
+          <button onClick={() => fileInputRef.current?.click()} className="bg-white border border-gray-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2">📤 Імпорт</button>
+          <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".csv" />
+          <button onClick={() => setModal({ open: true, data: null })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-xl hover:scale-105 transition-all">➕ Створити подію</button>
+        </div>
+      </div>
+
+      <EventModal isOpen={modal.open} onClose={() => setModal({ open: false, data: null })} onSave={modal.data ? updateEvent : addEvent} initialData={modal.data} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <div className="lg:col-span-8 bg-white p-8 sm:p-12 rounded-[4rem] shadow-xl border border-gray-100">
+           <div className="flex justify-between items-center mb-10">
+              <h2 className="text-2xl sm:text-3xl font-black text-blue-950 capitalize">{currentDate.toLocaleString('uk-UA', { month: 'long', year: 'numeric' })}</h2>
+              <div className="flex gap-3">
+                 <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1))} className="p-3 sm:p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 transition-colors">◀</button>
+                 <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1))} className="p-3 sm:p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 transition-colors">▶</button>
+              </div>
+           </div>
+           
+           <div className="grid grid-cols-7 gap-2 sm:gap-4 mb-4 text-center">
+              {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map(d => <div key={d} className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{d}</div>)}
+           </div>
+           
+           <div className="grid grid-cols-7 gap-2 sm:gap-4">
+              {Array.from({ length: offset }).map((_, i) => <div key={`off-${i}`} />)}
+              {Array.from({ length: monthDaysCount }).map((_, i) => {
+                const day = i + 1;
+                const dailyEvents = getEventsForDay(day);
+                const hasEvents = dailyEvents.length > 0;
+                const isSelected = selectedDay === day;
+                return (
+                  <button 
+                    key={day} 
+                    onClick={() => setSelectedDay(day)}
+                    className={`aspect-square rounded-2xl sm:rounded-3xl flex flex-col items-center justify-center transition-all relative ${isSelected ? 'bg-blue-600 text-white scale-110 shadow-2xl z-10' : hasEvents ? 'bg-blue-50 text-blue-900 font-black border border-blue-100' : 'bg-gray-50 text-gray-400 hover:bg-white'}`}
+                  >
+                     <span className="text-lg sm:text-xl font-black">{day}</span>
+                     {hasEvents && !isSelected && <div className="absolute bottom-2 sm:bottom-3 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                  </button>
+                );
+              })}
+           </div>
+        </div>
+
+        <aside className="lg:col-span-4 bg-gray-50 p-8 rounded-[3rem] border border-gray-100 flex flex-col overflow-hidden max-h-[700px]">
+           <h3 className="text-2xl font-black mb-8 flex items-center justify-between shrink-0">
+              <span>Події {selectedDay}-го</span>
+              {selectedDayEvents.length > 0 && <span className="bg-blue-950 text-white px-3 py-1 rounded-full text-[10px]">{selectedDayEvents.length}</span>}
+           </h3>
+           <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+              {selectedDayEvents.length > 0 ? selectedDayEvents.map(e => (
+                <div key={e.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 group hover:shadow-xl transition-all">
+                   <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">{getGameTypeIcon(e.type)}</span>
+                        <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${e.category === EventCategory.GAME ? 'bg-green-100 text-green-700' : 'bg-blue-900 text-white'}`}>
+                          {e.category}
+                        </span>
+                      </div>
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                         <button onClick={() => setModal({ open: true, data: e })} className="text-blue-500 text-sm hover:scale-125">✏️</button>
+                         <button onClick={() => deleteEvent(e.id)} className="text-red-500 text-sm hover:scale-125">🗑️</button>
+                      </div>
+                   </div>
+                   <h4 className="text-xl font-black text-blue-950 mb-2 leading-tight">{e.title}</h4>
+                   <p className="text-xs text-gray-400 font-bold mb-4">📍 {e.location}</p>
+                   <button className="w-full py-3 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-blue-600 transition-all">ПЕРЕГЛЯНУТИ</button>
+                </div>
+              )) : (
+                <div className="py-24 text-center opacity-20 flex flex-col items-center select-none">
+                   <div className="text-7xl mb-6 grayscale">🏐</div>
+                   <p className="font-black text-sm uppercase tracking-widest">Немає подій на цей день</p>
+                </div>
+              )}
+           </div>
+        </aside>
+      </div>
+    </div>
+  );
+};
+
+// Dashboard and other components
+const Dashboard = () => {
+  const { events } = React.useContext(EventsContext);
+  const { players } = React.useContext(PlayersContext);
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-12 animate-in fade-in">
+      <header>
+        <h1 className="text-5xl font-black text-blue-950 mb-2">Головна</h1>
+        <p className="text-gray-500 text-lg font-medium">Ваш центр волейбольної активності.</p>
+      </header>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100 lg:col-span-2">
+          <div className="flex justify-between items-center mb-8">
+            <h2 className="text-3xl font-black">🌟 Найближчі події</h2>
+            <Link to="/events" className="text-blue-600 font-black text-xs uppercase tracking-widest hover:underline">Всі події</Link>
+          </div>
+          <div className="grid gap-4">
+            {events.slice(0, 3).map(e => (
+              <div key={e.id} className="p-6 bg-gray-50 rounded-[2.5rem] flex items-center justify-between hover:bg-white hover:shadow-xl transition-all border border-transparent hover:border-blue-100 cursor-default">
+                <div className="flex gap-5 items-center">
+                   <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center text-white italic font-black text-xl shadow-lg ${e.category === EventCategory.GAME ? 'bg-green-600' : 'bg-blue-900'}`}>
+                     {e.category === EventCategory.GAME ? 'Г' : 'УВ'}
+                   </div>
+                   <div>
+                      <h4 className="text-xl font-black text-blue-950 mb-1">{e.title}</h4>
+                      <div className="flex gap-4 text-xs text-gray-500 font-bold">
+                         <span>📅 {e.date}</span>
+                         <span>📍 {e.location}</span>
+                         <span className="text-blue-600">[{e.category}]</span>
+                      </div>
+                   </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="text-xl">{getGameTypeIcon(e.type)}</span>
+                  <span className="bg-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">{e.type}</span>
+                </div>
+              </div>
+            ))}
+            {events.length === 0 && <p className="text-gray-400 font-bold text-center py-10 italic">Подій поки немає...</p>}
+          </div>
+        </div>
+
+        <div className="bg-blue-950 text-white p-10 rounded-[4rem] shadow-2xl flex flex-col justify-between relative overflow-hidden">
+           <div className="relative z-10">
+              <h3 className="text-2xl font-black mb-6">📊 Спільнота</h3>
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-4 bg-white/10 rounded-3xl text-center">
+                    <p className="text-4xl font-black">{players.length}</p>
+                    <p className="text-[10px] font-bold opacity-60 uppercase mt-1 tracking-widest">Гравців</p>
+                 </div>
+                 <div className="p-4 bg-white/10 rounded-3xl text-center">
+                    <p className="text-4xl font-black">{events.length}</p>
+                    <p className="text-[10px] font-bold opacity-60 uppercase mt-1 tracking-widest">Подій</p>
+                 </div>
+              </div>
+           </div>
+           <Link to="/market" className="block w-full bg-blue-600 py-5 rounded-[2rem] text-center font-black mt-12 hover:bg-blue-500 transition-all shadow-xl relative z-10">РИНОК ГРАВЦІВ</Link>
+           <div className="absolute -bottom-10 -right-10 text-9xl opacity-10 rotate-12 select-none">🏐</div>
+        </div>
       </div>
     </div>
   );
@@ -342,211 +715,6 @@ const RequestPlayModal = ({ isOpen, onClose, player, tournaments }: { isOpen: bo
   );
 };
 
-// Pages
-const Dashboard = () => {
-  const { events } = React.useContext(EventsContext);
-  const { players } = React.useContext(PlayersContext);
-
-  return (
-    <div className="p-8 max-w-7xl mx-auto space-y-12 animate-in fade-in">
-      <header>
-        <h1 className="text-5xl font-black text-blue-950 mb-2">Головна</h1>
-        <p className="text-gray-500 text-lg font-medium">Ваш центр волейбольної активності.</p>
-      </header>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100 lg:col-span-2">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-3xl font-black">🌟 Найближчі події</h2>
-            <Link to="/events" className="text-blue-600 font-black text-xs uppercase tracking-widest hover:underline">Всі події</Link>
-          </div>
-          <div className="grid gap-4">
-            {events.slice(0, 3).map(e => (
-              <div key={e.id} className="p-6 bg-gray-50 rounded-[2.5rem] flex items-center justify-between hover:bg-white hover:shadow-xl transition-all border border-transparent hover:border-blue-100 cursor-default">
-                <div className="flex gap-5 items-center">
-                   <div className="w-16 h-16 bg-blue-900 rounded-[1.5rem] flex items-center justify-center text-white italic font-black text-xl shadow-lg">УВ</div>
-                   <div>
-                      <h4 className="text-xl font-black text-blue-950 mb-1">{e.title}</h4>
-                      <div className="flex gap-4 text-xs text-gray-500 font-bold">
-                         <span>📅 {e.date}</span>
-                         <span>📍 {e.location}</span>
-                      </div>
-                   </div>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className="text-xl">{getGameTypeIcon(e.type)}</span>
-                  <span className="bg-blue-100 text-blue-600 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">{e.type}</span>
-                </div>
-              </div>
-            ))}
-            {events.length === 0 && <p className="text-gray-400 font-bold text-center py-10 italic">Подій поки немає...</p>}
-          </div>
-        </div>
-
-        <div className="bg-blue-950 text-white p-10 rounded-[4rem] shadow-2xl flex flex-col justify-between relative overflow-hidden">
-           <div className="relative z-10">
-              <h3 className="text-2xl font-black mb-6">📊 Спільнота</h3>
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="p-4 bg-white/10 rounded-3xl text-center">
-                    <p className="text-4xl font-black">{players.length}</p>
-                    <p className="text-[10px] font-bold opacity-60 uppercase mt-1 tracking-widest">Гравців</p>
-                 </div>
-                 <div className="p-4 bg-white/10 rounded-3xl text-center">
-                    <p className="text-4xl font-black">{events.length}</p>
-                    <p className="text-[10px] font-bold opacity-60 uppercase mt-1 tracking-widest">Турнірів</p>
-                 </div>
-              </div>
-           </div>
-           <Link to="/market" className="block w-full bg-blue-600 py-5 rounded-[2rem] text-center font-black mt-12 hover:bg-blue-500 transition-all shadow-xl relative z-10">РИНОК ГРАВЦІВ</Link>
-           <div className="absolute -bottom-10 -right-10 text-9xl opacity-10 rotate-12 select-none">🏐</div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const CalendarPage = () => {
-  const { events, addEvent, updateEvent, deleteEvent } = React.useContext(EventsContext);
-  const [modal, setModal] = useState<{ open: boolean, data: Tournament | null }>({ open: false, data: null });
-  const [currentDate, setCurrentDate] = useState(new Date(2024, 5, 1)); // Червень 2024
-  const [selectedDay, setSelectedDay] = useState<number>(15);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-  const startDayOfMonth = (year: number, month: number) => {
-    let day = new Date(year, month, 1).getDay();
-    return day === 0 ? 6 : day - 1; // 0=Pn, 6=Nd
-  };
-
-  const monthDaysCount = daysInMonth(currentDate.getFullYear(), currentDate.getMonth());
-  const offset = startDayOfMonth(currentDate.getFullYear(), currentDate.getMonth());
-
-  const getEventsForDay = (day: number) => {
-    const year = currentDate.getFullYear();
-    const month = (currentDate.getMonth() + 1).toString().padStart(2, '0');
-    const d = day.toString().padStart(2, '0');
-    const dStr = `${year}-${month}-${d}`;
-    return events.filter(e => e.date === dStr);
-  };
-
-  const selectedDayEvents = getEventsForDay(selectedDay);
-
-  const handleExport = () => {
-    const csv = ["ID,Title,Date,Location,Type", ...events.map(e => `"${e.id}","${e.title}","${e.date}","${e.location}","${e.type}"`)].join("\n");
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = "events_export.csv";
-    a.click();
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split("\n").slice(1);
-      lines.forEach(l => {
-        const parts = l.split(",").map(p => p.replace(/"/g, ''));
-        if (parts.length >= 4) {
-          addEvent({
-            id: Math.random().toString(), title: parts[1], date: parts[2], location: parts[3],
-            type: parts[4] as GameType || GameType.CLASSIC,
-            category: EventCategory.TOURNAMENT, gender: EventGender.MEN, organizer: 'Імпорт', organizerContact: '-', ageCategory: '', requirements: ''
-          });
-        }
-      });
-      alert("Дані успішно імпортовано!");
-    };
-    reader.readAsText(file);
-  };
-
-  return (
-    <div className="p-8 max-w-7xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-4xl font-black text-blue-950">Календар подій</h1>
-        <div className="flex flex-wrap gap-3">
-          <button onClick={handleExport} className="bg-white border border-gray-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2">📥 Експорт</button>
-          <button onClick={() => fileInputRef.current?.click()} className="bg-white border border-gray-100 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2">📤 Імпорт</button>
-          <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".csv" />
-          <button onClick={() => setModal({ open: true, data: null })} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-xl hover:scale-105 transition-all">➕ Нова подія</button>
-        </div>
-      </div>
-
-      <EventModal isOpen={modal.open} onClose={() => setModal({ open: false, data: null })} onSave={modal.data ? updateEvent : addEvent} initialData={modal.data} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        <div className="lg:col-span-8 bg-white p-8 sm:p-12 rounded-[4rem] shadow-xl border border-gray-100">
-           <div className="flex justify-between items-center mb-10">
-              <h2 className="text-2xl sm:text-3xl font-black text-blue-950 capitalize">{currentDate.toLocaleString('uk-UA', { month: 'long', year: 'numeric' })}</h2>
-              <div className="flex gap-3">
-                 <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1))} className="p-3 sm:p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 transition-colors">◀</button>
-                 <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1))} className="p-3 sm:p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 transition-colors">▶</button>
-              </div>
-           </div>
-           
-           <div className="grid grid-cols-7 gap-2 sm:gap-4 mb-4 text-center">
-              {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map(d => <div key={d} className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{d}</div>)}
-           </div>
-           
-           <div className="grid grid-cols-7 gap-2 sm:gap-4">
-              {Array.from({ length: offset }).map((_, i) => <div key={`off-${i}`} />)}
-              {Array.from({ length: monthDaysCount }).map((_, i) => {
-                const day = i + 1;
-                const dailyEvents = getEventsForDay(day);
-                const hasEvents = dailyEvents.length > 0;
-                const isSelected = selectedDay === day;
-                return (
-                  <button 
-                    key={day} 
-                    onClick={() => setSelectedDay(day)}
-                    className={`aspect-square rounded-2xl sm:rounded-3xl flex flex-col items-center justify-center transition-all relative ${isSelected ? 'bg-blue-600 text-white scale-110 shadow-2xl z-10' : hasEvents ? 'bg-blue-50 text-blue-900 font-black border border-blue-100' : 'bg-gray-50 text-gray-400 hover:bg-white'}`}
-                  >
-                     <span className="text-lg sm:text-xl font-black">{day}</span>
-                     {hasEvents && !isSelected && <div className="absolute bottom-2 sm:bottom-3 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
-                  </button>
-                );
-              })}
-           </div>
-        </div>
-
-        <aside className="lg:col-span-4 bg-gray-50 p-8 rounded-[3rem] border border-gray-100 flex flex-col overflow-hidden max-h-[700px]">
-           <h3 className="text-2xl font-black mb-8 flex items-center justify-between shrink-0">
-              <span>Події {selectedDay}-го</span>
-              {selectedDayEvents.length > 0 && <span className="bg-blue-950 text-white px-3 py-1 rounded-full text-[10px]">{selectedDayEvents.length}</span>}
-           </h3>
-           <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-              {selectedDayEvents.length > 0 ? selectedDayEvents.map(e => (
-                <div key={e.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 group hover:shadow-xl transition-all">
-                   <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl">{getGameTypeIcon(e.type)}</span>
-                        <span className="bg-blue-900 text-white px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">{e.type}</span>
-                      </div>
-                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                         <button onClick={() => setModal({ open: true, data: e })} className="text-blue-500 text-sm hover:scale-125">✏️</button>
-                         <button onClick={() => deleteEvent(e.id)} className="text-red-500 text-sm hover:scale-125">🗑️</button>
-                      </div>
-                   </div>
-                   <h4 className="text-xl font-black text-blue-950 mb-2 leading-tight">{e.title}</h4>
-                   <p className="text-xs text-gray-400 font-bold mb-4">📍 {e.location}</p>
-                   <button className="w-full py-3 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-blue-600 transition-all">ПЕРЕГЛЯНУТИ</button>
-                </div>
-              )) : (
-                <div className="py-24 text-center opacity-20 flex flex-col items-center select-none">
-                   <div className="text-7xl mb-6 grayscale">🏐</div>
-                   <p className="font-black text-sm uppercase tracking-widest">Немає подій на цей день</p>
-                </div>
-              )}
-           </div>
-        </aside>
-      </div>
-    </div>
-  );
-};
-
 const MarketPage = () => {
   const { players, addPlayer, updatePlayer, deletePlayer } = React.useContext(PlayersContext);
   const { events } = React.useContext(EventsContext);
@@ -651,7 +819,7 @@ const MarketPage = () => {
                  <button onClick={() => handleDelete(p.id)} className="bg-white/90 p-3 rounded-2xl text-red-600 shadow-xl hover:scale-110 transition-all">🗑️</button>
                </div>
                <div className="absolute bottom-8 left-8 text-white">
-                 <h3 className="text-2xl font-black leading-none mb-2">{p.name}</h3>
+                 <h3 className="text-2xl font-black leading-none mb-4">{p.name}</h3>
                  <RatingStars rating={p.overallRating} size="md" />
                </div>
                <span className="absolute top-6 left-8 bg-blue-900 text-white px-5 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest shadow-2xl">{p.level}</span>
@@ -687,85 +855,55 @@ const MarketPage = () => {
   );
 };
 
-// Main App Component
-function App() {
-  const [apiKeySelected, setApiKeySelected] = useState(false);
+// Main App component to handle state and routing
+const App = () => {
   const [events, setEvents] = useState<Tournament[]>(INITIAL_TOURNAMENTS);
   const [players, setPlayers] = useState<Player[]>(INITIAL_PLAYERS);
 
-  useEffect(() => {
-    const checkKey = async () => {
-      if (window.aistudio && await window.aistudio.hasSelectedApiKey()) setApiKeySelected(true);
-    };
-    checkKey();
-  }, []);
+  const addEvent = (e: Tournament) => setEvents(prev => [...prev, { ...e, id: Date.now().toString() }]);
+  const updateEvent = (e: Tournament) => setEvents(prev => prev.map(ev => ev.id === e.id ? e : ev));
+  const deleteEvent = (id: string) => setEvents(prev => prev.filter(e => e.id !== id));
 
-  const eventActions = {
-    addEvent: (e: Tournament) => setEvents(prev => [{ ...e, id: e.id || Date.now().toString() }, ...prev]),
-    updateEvent: (e: Tournament) => setEvents(prev => prev.map(item => item.id === e.id ? e : item)),
-    deleteEvent: (id: string) => setEvents(prev => prev.filter(item => item.id !== id))
-  };
+  const addPlayer = (p: Player) => setPlayers(prev => [...prev, p]);
+  const updatePlayer = (p: Player) => setPlayers(prev => prev.map(pl => pl.id === p.id ? p : pl));
+  const deletePlayer = (id: string) => setPlayers(prev => prev.filter(p => p.id !== id));
 
-  const playerActions = {
-    addPlayer: (p: Player) => setPlayers(prev => [{ ...p, id: p.id || Date.now().toString() }, ...prev]),
-    updatePlayer: (p: Player) => setPlayers(prev => prev.map(item => item.id === p.id ? p : item)),
-    deletePlayer: (id: string) => setPlayers(prev => prev.filter(item => item.id !== id))
-  };
+  const eventsValue = useMemo(() => ({ events, addEvent, updateEvent, deleteEvent }), [events]);
+  const playersValue = useMemo(() => ({ players, addPlayer, updatePlayer, deletePlayer }), [players]);
 
   return (
-    <EventsContext.Provider value={{ events, ...eventActions }}>
-      <PlayersContext.Provider value={{ players, ...playerActions }}>
+    <EventsContext.Provider value={eventsValue}>
+      <PlayersContext.Provider value={playersValue}>
         <HashRouter>
-          <div className="flex flex-col md:flex-row min-h-screen bg-[#FDFDFF] text-blue-950 font-['Roboto'] selection:bg-blue-100">
-            {/* Sidebar Navigation */}
-            <nav className="fixed bottom-0 md:relative w-full md:w-80 lg:w-96 bg-white border-r border-gray-100 p-6 sm:p-8 z-50 flex md:flex-col justify-around md:justify-start gap-4 shadow-2xl md:shadow-none">
-              <div className="hidden md:flex flex-col items-center mb-16 lg:mb-24">
-                <div className="w-20 h-20 lg:w-24 lg:h-24 bg-blue-950 rounded-[2.5rem] shadow-2xl flex items-center justify-center mb-6 hover:rotate-6 transition-transform">
-                  <span className="text-white text-3xl lg:text-4xl font-black italic">УВ</span>
-                </div>
-                <h1 className="text-xl lg:text-2xl font-black leading-tight text-center tracking-tight text-blue-950">Асоціація<br/><span className="text-blue-600">Ветеранів</span></h1>
-              </div>
-              {[
-                { to: '/', icon: '🏠', label: 'Головна' },
-                { to: '/events', icon: '📅', label: 'Події' },
-                { to: '/market', icon: '🫂', label: 'Ринок' },
-                { to: '/profile', icon: '👤', label: 'Профіль' },
-              ].map(l => (
-                <Link key={l.to} to={l.to} className="flex flex-col md:flex-row items-center gap-4 lg:gap-5 p-4 sm:p-5 rounded-[2rem] hover:bg-blue-50 font-black uppercase text-[10px] lg:text-[11px] tracking-[0.2em] text-gray-400 hover:text-blue-900 transition-all group">
-                  <span className="text-xl lg:text-2xl group-hover:scale-125 transition-transform">{l.icon}</span>
-                  <span className="hidden md:inline">{l.label}</span>
+          <div className="min-h-screen bg-gray-50 font-sans text-blue-950">
+            <nav className="bg-white border-b border-gray-100 sticky top-0 z-[80] px-8 py-5">
+              <div className="max-w-7xl mx-auto flex justify-between items-center">
+                <Link to="/" className="text-2xl font-black italic tracking-tighter flex items-center gap-2">
+                  <span className="bg-blue-900 text-white w-10 h-10 flex items-center justify-center rounded-xl not-italic">🏐</span>
+                  АВВУ
                 </Link>
-              ))}
+                <div className="flex gap-8 items-center">
+                  <Link to="/" className="text-[11px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">Головна</Link>
+                  <Link to="/events" className="text-[11px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">Календар</Link>
+                  <Link to="/market" className="text-[11px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">Ринок</Link>
+                </div>
+              </div>
             </nav>
 
-            <main className="flex-1 pb-24 md:pb-0 overflow-y-auto bg-[#FDFDFF]">
-              {!apiKeySelected ? (
-                <div className="h-full flex flex-col items-center justify-center p-8 sm:p-20 text-center space-y-8 animate-in fade-in">
-                  <div className="w-32 h-32 sm:w-40 sm:h-40 bg-blue-50 rounded-[4rem] flex items-center justify-center text-6xl sm:text-7xl shadow-inner animate-bounce">🦾</div>
-                  <h2 className="text-4xl sm:text-5xl font-black">СЕВА ШІ</h2>
-                  <p className="text-gray-500 max-w-md text-base sm:text-lg font-medium leading-relaxed">Підключіть свій API ключ для активації помічника та розумних функцій Асоціації.</p>
-                  <button onClick={() => window.aistudio.openSelectKey().then(() => setApiKeySelected(true))} className="bg-blue-600 text-white px-12 sm:px-16 py-5 sm:py-6 rounded-[2.5rem] font-black text-xl sm:text-2xl shadow-2xl hover:scale-105 transition-all">УВІЙТИ</button>
-                </div>
-              ) : (
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/events" element={<CalendarPage />} />
-                  <Route path="/market" element={<MarketPage />} />
-                  <Route path="/profile" element={<div className="p-20 text-4xl font-black text-center opacity-10 uppercase tracking-widest h-full flex items-center justify-center italic">В розробці...</div>} />
-                </Routes>
-              )}
+            <main className="pb-24">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/events" element={<CalendarPage />} />
+                <Route path="/market" element={<MarketPage />} />
+              </Routes>
             </main>
-            <SevaAssistant onCommand={(c) => {
-               const cmd = c.toLowerCase();
-               if (cmd.includes('поді')) window.location.hash = '/events';
-               if (cmd.includes('ринок')) window.location.hash = '/market';
-               if (cmd.includes('голов')) window.location.hash = '/';
-            }} />
+
+            <SevaAssistant />
           </div>
         </HashRouter>
       </PlayersContext.Provider>
     </EventsContext.Provider>
   );
-}
+};
 
 export default App;

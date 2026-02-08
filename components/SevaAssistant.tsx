@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 
 interface SevaAssistantProps {
   onCommand?: (command: string) => void;
@@ -42,8 +42,8 @@ export const SevaAssistant: React.FC<SevaAssistantProps> = ({ onCommand }) => {
 
   const startSession = async () => {
     try {
-      // Створюємо новий екземпляр безпосередньо перед використанням, щоб гарантувати використання останнього ключа API
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Використовуємо process.env.API_KEY безпосередньо для ініціалізації
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = outputCtx;
@@ -75,11 +75,12 @@ export const SevaAssistant: React.FC<SevaAssistantProps> = ({ onCommand }) => {
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputCtx.destination);
           },
-          onmessage: async (msg: any) => {
-            if (msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data) {
+          onmessage: async (msg: LiveServerMessage) => {
+            const base64Audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64Audio) {
               setIsSpeaking(true);
               const audioBuffer = await decodeAudioData(
-                decode(msg.serverContent.modelTurn.parts[0].inlineData.data),
+                decode(base64Audio),
                 outputCtx, 24000, 1
               );
               const source = outputCtx.createBufferSource();
@@ -96,7 +97,7 @@ export const SevaAssistant: React.FC<SevaAssistantProps> = ({ onCommand }) => {
               };
             }
             if (msg.serverContent?.inputTranscription) {
-              setTranscription(msg.serverContent.inputTranscription.text);
+              setTranscription(msg.serverContent.inputTranscription.text || '');
             }
             if (msg.serverContent?.turnComplete) {
               setTranscription(t => {

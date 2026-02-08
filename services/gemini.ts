@@ -5,7 +5,7 @@ export const geminiService = {
   // Логіка чатбота з міркуванням
   async chatWithThinking(prompt: string): Promise<string> {
     // Створюємо екземпляр безпосередньо в методі
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
@@ -18,7 +18,7 @@ export const geminiService = {
 
   // Сервіс перекладу
   async translateMessage(text: string, targetLanguage: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Translate the following chat message into ${targetLanguage}. Return ONLY the translated text, no explanations: "${text}"`,
@@ -28,7 +28,7 @@ export const geminiService = {
 
   // Генерація зображень
   async generatePromoImage(prompt: string, size: "1K" | "2K" | "4K" = "1K"): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-image-preview',
       contents: { parts: [{ text: prompt }] },
@@ -48,7 +48,7 @@ export const geminiService = {
 
   // Генерація відео
   async generatePromoVideo(prompt: string, orientation: '16:9' | '9:16' = '16:9') {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     let operation = await ai.models.generateVideos({
       model: 'veo-3.1-fast-generate-preview',
       prompt: prompt,
@@ -60,7 +60,7 @@ export const geminiService = {
     });
 
     while (!operation.done) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, 10000));
       operation = await ai.operations.getVideosOperation({ operation: operation });
     }
 
@@ -72,7 +72,7 @@ export const geminiService = {
 
   // Пошук локацій з Google Maps grounding
   async searchLocationInfo(location: string) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Надай детальну інформацію про спортивний майданчик або локацію для волейболу: ${location}`,
@@ -88,12 +88,12 @@ export const geminiService = {
 
   // Текст у мовлення (TTS) для СЕВА
   async speakAsSeva(text: string): Promise<AudioBuffer> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `Скажи впевнено та по-спортивному: ${text}` }] }],
       config: {
-        responseModalities: [Modality.AUDIO],
+        responseModalalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Fenrir' }
