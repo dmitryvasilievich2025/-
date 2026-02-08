@@ -1,4 +1,3 @@
-
 export enum PlayerLevel {
   BEGINNER = 'Новачок',
   AMATEUR = 'Любитель',
@@ -31,8 +30,7 @@ export enum EventCategory {
 
 export enum EventGender {
   MEN = 'Чоловіки',
-  WOMEN = 'Жінки',
-  MIXED = 'Мікс'
+  WOMEN = 'Жінки'
 }
 
 export interface PlayerStats {
@@ -56,6 +54,7 @@ export interface Player {
   id: string;
   name: string;
   age: number;
+  gender: EventGender;
   level: PlayerLevel;
   role: PlayerRole;
   contacts: string;
